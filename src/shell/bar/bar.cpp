@@ -44,6 +44,62 @@ namespace {
   constexpr std::int32_t kAutoHideTriggerPx = 3;
   constexpr float kAutoHideSlideExtraPx = 4.0f;
 
+  // Covers just the bar's border segment that lies behind an attached panel.
+  // This is in the BAR scene, unlike the panel's own seam mask. Both are needed
+  // because the compositor renders the bar and panel as separate surfaces.
+  void updateAttachedBorderCover(BarInstance& instance, bool enabled) {
+    Box* cover = instance.attachedBorderCover;
+    if (cover == nullptr || instance.bg == nullptr || !enabled
+        || !instance.attachedPanelGeometry.has_value()
+        || instance.barConfig.borderWidth <= 0.0f) {
+      if (cover != nullptr)
+        cover->setVisible(false);
+      return;
+    }
+
+    const auto& panel = *instance.attachedPanelGeometry;
+    const auto& position = instance.barConfig.position;
+    const bool vertical = position == "left" || position == "right";
+    // Match the bar border to the attached panel's concave arc at the
+    // existing overlap depth. Do not change the configured overlap.
+    // For a circular arc of radius r, the inset at depth d is
+    // sqrt(d * (2*r - d)). The panel publishes its current (animated)
+    // bar-side bulge radius separately from its outer corner radius.
+    const float radius = std::max(0.0f, panel.bulgeRadius);
+    const float depth = std::clamp(
+        static_cast<float>(instance.barConfig.panelOverlap), 0.0f, radius);
+    const float inset = std::sqrt(std::max(0.0f, depth * (2.0f * radius - depth)));
+    constexpr float kJoinAllowance = 1.0f;
+    const float start = (vertical ? panel.y : panel.x) + inset + kJoinAllowance;
+    const float finish = (vertical ? panel.y + panel.height : panel.x + panel.width) - inset - kJoinAllowance;
+    const float bgStart = vertical ? instance.bg->y() : instance.bg->x();
+    const float bgFinish = bgStart + (vertical ? instance.bg->height() : instance.bg->width());
+    const float a = std::max(start, bgStart);
+    const float b = std::min(finish, bgFinish);
+    if (b <= a) {
+      cover->setVisible(false);
+      return;
+    }
+
+    // A little wider than the antialiased stroke, but NEVER extend along the
+    // bar beyond the panel's published attachment arc.
+    const float stroke = std::max(2.0f, instance.barConfig.borderWidth * 2.0f + 1.0f);
+    if (position == "bottom") {
+      cover->setPosition(a, instance.bg->y() - 1.0f);
+      cover->setSize(b - a, stroke);
+    } else if (position == "left") {
+      cover->setPosition(instance.bg->x() + instance.bg->width() - stroke + 1.0f, a);
+      cover->setSize(stroke, b - a);
+    } else if (position == "right") {
+      cover->setPosition(instance.bg->x() - 1.0f, a);
+      cover->setSize(stroke, b - a);
+    } else {
+      cover->setPosition(a, instance.bg->y() + instance.bg->height() - stroke + 1.0f);
+      cover->setSize(b - a, stroke);
+    }
+    cover->setVisible(true);
+  }
+
   [[nodiscard]] std::string activeWorkspaceId(const std::vector<Workspace>& workspaces) {
     for (const auto& workspace : workspaces) {
       if (workspace.active) {
@@ -1907,6 +1963,7 @@ void Bar::setAttachedPanelGeometry(
   }
 
   instance->attachedPanelGeometry = geometry;
+  updateAttachedBorderCover(*instance, m_config != nullptr && m_config->config().shell.panel.borders);
   if (instance->surface != nullptr && instance->surface->width() > 0 && instance->surface->height() > 0) {
     applyBarShadowStyle(
         *instance, m_config->config().shell.shadow, static_cast<float>(instance->surface->width()),
@@ -2655,6 +2712,10 @@ void Bar::applyBackgroundPalette(BarInstance& instance) {
   style.border = resolveColorSpec(instance.barConfig.border);
   style.borderWidth = instance.barConfig.borderWidth;
   instance.bg->setStyle(style);
+  if (instance.attachedBorderCover != nullptr) {
+    instance.attachedBorderCover->setFill(
+        colorSpecFromRole(ColorRole::Surface, instance.barConfig.backgroundOpacity));
+  }
 }
 
 void Bar::syncBarAutoHideInputRegion(BarInstance& instance) const {
@@ -2842,6 +2903,11 @@ void Bar::buildScene(BarInstance& instance, std::uint32_t width, std::uint32_t h
 
     // Bar background
     instance.bg = static_cast<Box*>(instance.slideRoot->addChild(ui::box()));
+    instance.attachedBorderCover = static_cast<Box*>(instance.slideRoot->addChild(ui::box()));
+    instance.attachedBorderCover->setHitTestVisible(false);
+    instance.attachedBorderCover->setRadius(0.0f);
+    instance.attachedBorderCover->setSoftness(0.0f);
+    instance.attachedBorderCover->setVisible(false);
 
     // Shadow — bar shape copy rendered with large SDF softness to simulate a blurred drop shadow.
     if (shadowSize > 0.0f) {
@@ -2961,6 +3027,13 @@ void Bar::buildScene(BarInstance& instance, std::uint32_t width, std::uint32_t h
         barAreaH + concave.logicalInset.top + concave.logicalInset.bottom
     );
   }
+
+  if (instance.attachedBorderCover != nullptr) {
+    instance.attachedBorderCover->setFill(
+        colorSpecFromRole(ColorRole::Surface, instance.barConfig.backgroundOpacity));
+  }
+  updateAttachedBorderCover(
+      instance, m_config != nullptr && m_config->config().shell.panel.borders);
 
   instance.paletteConn = paletteChanged().connect([inst = &instance] {
     applyBackgroundPalette(*inst);

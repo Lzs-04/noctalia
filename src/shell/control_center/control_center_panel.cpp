@@ -62,6 +62,7 @@ ControlCenterPanel::ControlCenterPanel(const ControlCenterServices& services) {
   m_tabs[tabIndex(TabId::System)] = std::make_unique<SystemTab>(services.sysmon);
   m_tabs[tabIndex(TabId::ScreenTime)] = std::make_unique<ScreenTimeTab>(services.screenTime);
   m_tabs[tabIndex(TabId::Power)] = std::make_unique<PowerTab>(services.upower, services.powerProfiles);
+  m_tabs[tabIndex(TabId::Travel)] = std::make_unique<TravelTab>();
   m_tabButtons.fill(nullptr);
   m_tabContainers.fill(nullptr);
   m_tabHeaderActions.fill(nullptr);
@@ -175,7 +176,7 @@ void ControlCenterPanel::create() {
       sidebarNav->addChild(
           ui::button({
               .out = &m_tabButtons[idx],
-              .text = m_compact ? std::optional<std::string>{} : std::optional<std::string>{i18n::tr(tab.titleKey)},
+              .text = m_compact ? std::optional<std::string>{} : std::optional<std::string>{(tab.id == TabId::Travel ? std::string("Travel Mode") : i18n::tr(tab.titleKey))},
               .glyph = tab.glyph,
               .glyphSize = 21.0f * scale,
               .contentAlign = m_compact ? ButtonContentAlign::Center : ButtonContentAlign::Start,
@@ -571,7 +572,7 @@ void ControlCenterPanel::updateTabChrome(TabId tab) {
       m_tabButtons[idx]->setVariant(meta.id == tab ? ButtonVariant::TabActive : ButtonVariant::Tab);
     }
     if (meta.id == tab && m_contentTitle != nullptr) {
-      m_contentTitle->setText(i18n::tr(meta.titleKey));
+      m_contentTitle->setText(meta.id == TabId::Travel ? "Travel Mode" : i18n::tr(meta.titleKey));
     }
     if (m_tabHeaderActions[idx] != nullptr) {
       m_tabHeaderActions[idx]->setVisible(tabEnabled && meta.id == tab);

@@ -520,12 +520,7 @@ void KeyboardLayoutWidget::sync(Renderer& renderer) {
   }
 
   if (auto* area = static_cast<InputArea*>(root()); area != nullptr) {
-    if (m_showLabel) {
-      area->clearTooltip();
-    } else {
-      const std::string tooltipText = layoutName.empty() ? layoutLabel : layoutName;
-      area->setTooltip(tooltipText);
-    }
+    area->clearTooltip();
   }
 
   if (auto* node = root(); node != nullptr) {

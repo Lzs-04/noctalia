@@ -12,6 +12,7 @@
 #include "shell/control_center/tabs/network_tab.h"
 #include "shell/control_center/tabs/notifications_tab.h"
 #include "shell/control_center/tabs/power_tab.h"
+#include "shell/control_center/tabs/travel_tab.h"
 #include "shell/control_center/tabs/system_tab.h"
 #include "shell/control_center/tabs/weather_tab.h"
 #include "shell/panel/panel.h"
@@ -111,6 +112,7 @@ private:
     Notifications,
     ScreenTime,
     Power,
+    Travel,
     Count,
   };
 
@@ -124,16 +126,17 @@ private:
   static constexpr std::size_t kTabCount = static_cast<std::size_t>(TabId::Count);
   static constexpr std::array<TabMeta, kTabCount> kTabs{{
       {TabId::Home, "home", "control-center.tabs.home", "home"},
-      {TabId::Media, "media", "control-center.tabs.media", "disc-filled"},
-      {TabId::Audio, "audio", "control-center.tabs.audio", "volume"},
-      {TabId::Monitor, "monitor", "control-center.tabs.monitor", "device-desktop"},
-      {TabId::System, "system", "control-center.tabs.system", "activity-heartbeat"},
-      {TabId::Power, "power", "control-center.tabs.power", "battery-charging-2"},
       {TabId::Network, "network", "control-center.tabs.network", "wifi"},
       {TabId::Bluetooth, "bluetooth", "control-center.tabs.bluetooth", "bluetooth"},
-      {TabId::Weather, "weather", "control-center.tabs.weather", "weather-cloud-sun"},
+      {TabId::Travel, "travel", "Travel Mode", "beach"},
+      {TabId::Audio, "audio", "control-center.tabs.audio", "volume"},
+      {TabId::Monitor, "monitor", "control-center.tabs.monitor", "device-desktop"},
+      {TabId::Power, "power", "control-center.tabs.power", "battery-charging-2"},
+      {TabId::Media, "media", "control-center.tabs.media", "disc-filled"},
       {TabId::Calendar, "calendar", "control-center.tabs.calendar", "calendar-event"},
       {TabId::Notifications, "notifications", "control-center.tabs.notifications", "bell"},
+      {TabId::Weather, "weather", "control-center.tabs.weather", "weather-cloud-sun"},
+      {TabId::System, "system", "control-center.tabs.system", "activity-heartbeat"},
       {TabId::ScreenTime, "screen-time", "control-center.tabs.screen-time", "hourglass"},
   }};
 

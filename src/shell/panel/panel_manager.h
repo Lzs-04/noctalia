@@ -205,6 +205,12 @@ private:
   Node* m_attachedRevealContentNode = nullptr;
   Box* m_panelShadowNode = nullptr;
   Box* m_panelContactShadowNode = nullptr;
+  // Attached panel outline is rendered separately, clipped off on its
+  // bar-facing side so no horizontal seam is drawn.
+  Node* m_attachedBorderClipNode = nullptr;
+  Box* m_attachedBorderNode = nullptr;
+  Box* m_attachedTopSeamEraser = nullptr;
+  float m_attachedBorderOverlap = 0.0f;
   InputDispatcher m_inputDispatcher;
 
   std::unordered_map<std::string, std::unique_ptr<Panel>> m_panels;

@@ -994,7 +994,7 @@ void Input::doLayout(Renderer& renderer) {
   }
 
   if (showPasswordGlyphs) {
-    syncPasswordGlyphNodes(charCount);
+    syncPasswordGlyphNodes(m_passwordGlyphsVisible ? charCount : 0);
     float gx = m_contentLeadSlack - m_scrollOffset;
     for (std::size_t i = 0; i < m_passwordGlyphs.size(); ++i) {
       auto* glyph = m_passwordGlyphs[i];
@@ -1739,7 +1739,7 @@ LayoutSize Input::doMeasure(Renderer& renderer, const LayoutConstraints& constra
 
 void Input::updateCursorVisibility() {
   const bool focused = m_inputArea != nullptr && m_inputArea->focused();
-  m_cursor->setVisible(focused && m_cursorBlinkVisible);
+  m_cursor->setVisible(focused && m_cursorBlinkVisible && m_caretVisible);
 }
 
 void Input::revealCursor() {

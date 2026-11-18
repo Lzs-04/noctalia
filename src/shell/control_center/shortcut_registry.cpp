@@ -1,6 +1,7 @@
 #include "shell/control_center/shortcut_registry.h"
 
 #include "compositors/compositor_platform.h"
+#include "core/process/process.h"
 #include "config/config_service.h"
 #include "dbus/bluetooth/bluetooth_service.h"
 #include "dbus/mpris/mpris_service.h"
@@ -25,6 +26,7 @@
 #include <array>
 #include <cmath>
 #include <deque>
+#include <filesystem>
 #include <format>
 #include <optional>
 #include <vector>
@@ -443,6 +445,7 @@ namespace {
   };
 
   // ── Action-only shortcuts ────��──────────────────────────────────────────────
+
 
   class MediaShortcut final : public Shortcut {
   public:

@@ -936,6 +936,7 @@ void PanelManager::openPanel(const std::string& panelId, PanelOpenRequest reques
     m_keyboardRelaxTimer.stop();
     m_attachedBarPosition = std::string(barPosition);
     m_attachedToBar = true;
+    m_attachedBorderOverlap = static_cast<float>(panelOverlap);
 
     // Convert panel screen coords to bar-surface-local coords for shadow exclusion.
     // Bar surface origin sits one shadow bleed inset from the visible bar top-left,
@@ -1288,6 +1289,10 @@ void PanelManager::destroyPanel() {
     m_activePanel->onClose();
   }
   m_bgNode = nullptr;
+  m_attachedBorderClipNode = nullptr;
+  m_attachedBorderNode = nullptr;
+  m_attachedTopSeamEraser = nullptr;
+  m_attachedBorderOverlap = 0.0f;
   m_contentNode = nullptr;
   m_detachedRevealClipNode = nullptr;
   m_detachedRevealContentNode = nullptr;
@@ -2014,6 +2019,22 @@ void PanelManager::applyAttachedDecorationStyle() {
   if (m_bgNode != nullptr) {
     auto* bg = static_cast<Box*>(m_bgNode);
     bg->setFill(colorSpecFromRole(ColorRole::Surface, m_attachedBackgroundOpacity));
+    // The background must not draw a bar-facing seam: its border is
+    // rendered by the independently clipped outline below.
+    bg->clearBorder();
+  }
+  if (m_attachedTopSeamEraser != nullptr) {
+    m_attachedTopSeamEraser->setFill(
+        colorSpecFromRole(ColorRole::Surface, m_attachedBackgroundOpacity));
+    m_attachedTopSeamEraser->setVisible(
+        m_config != nullptr && m_config->config().shell.panel.borders);
+  }
+  if (m_attachedBorderNode != nullptr) {
+    if (m_config != nullptr && m_config->config().shell.panel.borders) {
+      m_attachedBorderNode->setBorder(colorSpecFromRole(ColorRole::OnSurface), Style::borderWidth);
+    } else {
+      m_attachedBorderNode->clearBorder();
+    }
   }
 
   if (m_panelShadowNode != nullptr && m_config != nullptr) {
@@ -2198,6 +2219,35 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
       m_bgNode = sceneParent->addChild(std::move(bg));
     }
 
+    if (hasDecoration && m_attachedToBar) {
+      // Clip the OUTLINE at the bar-facing attachment line. Keeping the
+      // complete background separately avoids a horizontal top border,
+      // while the outline retains the precise concave corner geometry.
+      auto clip = std::make_unique<Node>();
+      clip->setClipChildren(true);
+      clip->setHitTestVisible(false);
+      m_attachedBorderClipNode = sceneParent->addChild(std::move(clip));
+
+      auto outline = std::make_unique<Box>();
+      outline->setHitTestVisible(false);
+      outline->setFill(clearColorSpec());
+      const float radius = Style::scaledRadiusXl(m_activePanel->contentScale());
+      outline->setCornerShapes(attached_panel::cornerShapes(m_attachedBarPosition));
+      outline->setLogicalInset(attached_panel::logicalInset(m_attachedBarPosition, radius));
+      outline->setRadii(Radii{radius, radius, radius, radius});
+      outline->setBorder(colorSpecFromRole(ColorRole::OnSurface), Style::borderWidth);
+      m_attachedBorderNode = static_cast<Box*>(m_attachedBorderClipNode->addChild(std::move(outline)));
+      // Opaque top-edge fringe eraser, restricted to the straight section.
+      // It does not touch the two concave corner arcs.
+      auto seamEraser = std::make_unique<Box>();
+      seamEraser->setHitTestVisible(false);
+      seamEraser->setRadius(0.0f);
+      seamEraser->setNoAa(true);
+      seamEraser->clearBorder();
+      seamEraser->setFill(colorSpecFromRole(ColorRole::Surface, m_attachedBackgroundOpacity));
+      m_attachedTopSeamEraser = static_cast<Box*>(sceneParent->addChild(std::move(seamEraser)));
+    }
+
     if (hasDecoration && m_attachedToBar && m_attachedContactShadow) {
       auto contactShadow = std::make_unique<Box>();
       m_panelContactShadowNode = static_cast<Box*>(sceneParent->addChild(std::move(contactShadow)));
@@ -2328,6 +2378,48 @@ void PanelManager::buildScene(std::uint32_t width, std::uint32_t height) {
   if (m_bgNode != nullptr) {
     m_bgNode->setPosition(bgX, bgY);
     m_bgNode->setSize(bgW, bgH);
+  }
+
+  if (m_attachedBorderClipNode != nullptr && m_attachedBorderNode != nullptr) {
+    const float depth = std::clamp(m_attachedBorderOverlap, 0.0f, attachedRadius);
+    float clipX = bgX;
+    float clipY = bgY;
+    float clipW = bgW;
+    float clipH = bgH;
+    if (m_attachedBarPosition == "bottom") {
+      clipH -= depth;
+    } else if (m_attachedBarPosition == "left") {
+      clipX += depth;
+      clipW -= depth;
+    } else if (m_attachedBarPosition == "right") {
+      clipW -= depth;
+    } else {
+      clipY += depth;
+      clipH -= depth;
+    }
+    m_attachedBorderClipNode->setPosition(clipX, clipY);
+    m_attachedBorderClipNode->setFrameSize(std::max(0.0f, clipW), std::max(0.0f, clipH));
+    m_attachedBorderNode->setPosition(bgX - clipX, bgY - clipY);
+    m_attachedBorderNode->setSize(bgW, bgH);
+  }
+
+  // This narrow opaque rectangle hides only the residual straight top
+  // hairline. Its ends stop at the panel body, before the two concave arcs.
+  if (m_attachedTopSeamEraser != nullptr) {
+    const bool top = m_attachedBarPosition == "top";
+    m_attachedTopSeamEraser->setVisible(
+        top && m_config != nullptr && m_config->config().shell.panel.borders);
+    if (top) {
+      const float depth = std::clamp(m_attachedBorderOverlap, 0.0f, attachedRadius);
+      const float arcInset = std::sqrt(
+          std::max(0.0f, depth * (2.0f * attachedRadius - depth)));
+      const float seamExtension = std::min(attachedRadius, arcInset + 1.0f);
+
+      m_attachedTopSeamEraser->setPosition(
+          panelX - seamExtension, panelY + depth - 0.5f);
+      m_attachedTopSeamEraser->setSize(
+          panelW + 2.0f * seamExtension, 2.0f);
+    }
   }
 
   if (m_panelContactShadowNode != nullptr) {

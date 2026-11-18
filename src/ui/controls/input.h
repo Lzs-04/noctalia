@@ -39,6 +39,8 @@ public:
   void setHorizontalPadding(float padding);
   void setClearButtonEnabled(bool enabled);
   void setPasswordMode(bool enabled);
+  void setCaretVisible(bool visible) noexcept { m_caretVisible = visible; }
+  void setPasswordGlyphsVisible(bool visible) noexcept { m_passwordGlyphsVisible = visible; }
   /// Multi-line editing: Enter inserts '\n' (Ctrl+Enter submits), the text wraps
   /// at the viewport width and scrolls vertically. The control keeps whatever
   /// height layout assigns (explicit height or flex-grown) instead of forcing
@@ -223,6 +225,8 @@ private:
   float m_horizontalPadding = Style::spaceMd;
   bool m_clearButtonEnabled = false;
   bool m_passwordMode = false;
+  bool m_caretVisible = true;
+  bool m_passwordGlyphsVisible = true;
   bool m_multiline = false;
   bool m_invalid = false;
   bool m_frameVisible = true;
