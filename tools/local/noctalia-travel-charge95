@@ -2,7 +2,7 @@
 """A one-shot charge-to-95% action for the local ThinkPad BAT0 via TLP.
 
 Run by pkexec as root. Never edits /etc/tlp.conf. A transient systemd unit
-monitors charge and restores the user's configured thresholds when safe.
+monitors charge and restores the previous thresholds when safe.
 """
 
 import fcntl
@@ -19,7 +19,10 @@ TLP_CONFIG = Path('/etc/tlp.conf')
 LOCK = Path('/run/lock/noctalia-charge95.lock')
 HELPER = '/usr/local/libexec/noctalia-travel-charge95'
 UNIT = 'noctalia-travel-charge95.service'
+STATE = Path('/run/noctalia-travel-charge95.state')
 TEMP_THRESHOLDS = (0, 95)
+# Some charge controllers show 95/95 even when TLP was given 0/95.
+TEMP_READBACKS = {(0, 95), (95, 95)}
 
 
 def read_int(path: Path) -> int:
@@ -67,34 +70,31 @@ def configured_thresholds() -> tuple[int, int] | None:
     return values['START_CHARGE_THRESH_BAT0'], values['STOP_CHARGE_THRESH_BAT0']
 
 
-def safe_to_restore_on_ac() -> bool:
-    configured = configured_thresholds()
-    if configured is None:
-        return False
-    start, stop = configured
-    # 0 disables the start threshold. Restoring with start=0 and stop>95
-    # could resume charging beyond the user's requested 95%.
-    return (0 < start < 95) or stop <= 95
+def safe_to_restore_on_ac(start: int, stop: int) -> bool:
+    # Avoid restoring a normal stop threshold above 95% while AC is connected.
+    return 0 <= start < stop <= 95
 
 
-def monitor() -> None:
-    # TLP itself restores normal settings on the next boot; this monitor
-    # restores them earlier after reaching 95% (where safe), or unplugging.
-    end = time.monotonic() + 12 * 60 * 60
-    while time.monotonic() < end:
-        if thresholds() != TEMP_THRESHOLDS:
-            print('Charge thresholds changed elsewhere; leaving them untouched')
-            return
-        if not adapter_connected():
-            run_tlp('setcharge', 'BAT0')
-            print('AC removed; configured TLP thresholds restored')
-            return
-        if read_int(BATTERY / 'capacity') >= 95 and safe_to_restore_on_ac():
-            run_tlp('setcharge', 'BAT0')
-            print('95% reached; configured TLP thresholds restored')
-            return
-        time.sleep(15)
-    print('Watcher finished; temporary 95% stop remains until reboot or AC disconnect')
+def monitor(original_start: int, original_stop: int) -> None:
+    # The UI reads STATE to display normal limits during this one-time action.
+    STATE.write_text(f'{original_start} {original_stop}\n')
+    os.chmod(STATE, 0o644)
+    try:
+        while True:
+            if thresholds() not in TEMP_READBACKS:
+                print('Charge thresholds changed elsewhere; leaving them untouched')
+                return
+            if not adapter_connected():
+                run_tlp('setcharge', str(original_start), str(original_stop), 'BAT0')
+                print('AC removed; previous thresholds restored')
+                return
+            if read_int(BATTERY / 'capacity') >= 95 and safe_to_restore_on_ac(original_start, original_stop):
+                run_tlp('setcharge', str(original_start), str(original_stop), 'BAT0')
+                print('95% reached; previous thresholds restored')
+                return
+            time.sleep(15)
+    finally:
+        STATE.unlink(missing_ok=True)
 
 
 def start() -> None:
@@ -114,22 +114,30 @@ def start() -> None:
         if running.returncode == 0:
             print('Charge-to-95% monitor is already running')
             return
+        STATE.unlink(missing_ok=True)
         original = thresholds()
+        normal = original
+        if not (0 <= normal[0] < normal[1] <= 100):
+            configured = configured_thresholds()
+            if configured is None or not (0 <= configured[0] < configured[1] <= 100):
+                raise RuntimeError('Cannot determine the normal charging limits')
+            normal = configured
         if original != TEMP_THRESHOLDS:
             run_tlp('setcharge', '0', '95', 'BAT0')
-            if thresholds() != TEMP_THRESHOLDS:
+            if thresholds() not in TEMP_READBACKS:
+                run_tlp('setcharge', str(normal[0]), str(normal[1]), 'BAT0')
                 raise RuntimeError(f'BAT0 rejected temporary 0/95 limits: {thresholds()}')
         try:
             proc = subprocess.run([
                 '/usr/bin/systemd-run', '--collect',
                 f'--unit={UNIT}', '--service-type=exec',
-                HELPER, '--monitor',
+                HELPER, '--monitor', str(normal[0]), str(normal[1]),
             ], capture_output=True, text=True, check=False)
             if proc.returncode:
                 raise RuntimeError((proc.stderr + ' ' + proc.stdout).strip())
         except Exception:
-            if original != TEMP_THRESHOLDS and thresholds() == TEMP_THRESHOLDS:
-                run_tlp('setcharge', str(original[0]), str(original[1]), 'BAT0')
+            if original != TEMP_THRESHOLDS and thresholds() in TEMP_READBACKS:
+                run_tlp('setcharge', str(normal[0]), str(normal[1]), 'BAT0')
             raise
         print('Charging enabled now; firmware will stop at 95% (AC required)')
 
@@ -139,10 +147,14 @@ def main() -> None:
         raise RuntimeError('Root authorization required')
     if len(sys.argv) == 1:
         start()
-    elif sys.argv[1:] == ['--monitor']:
-        monitor()
+    elif len(sys.argv) == 4 and sys.argv[1] == '--monitor':
+        original_start = int(sys.argv[2])
+        original_stop = int(sys.argv[3])
+        if not (0 <= original_start <= 100 and 0 <= original_stop <= 100):
+            raise RuntimeError('Invalid saved thresholds')
+        monitor(original_start, original_stop)
     else:
-        raise RuntimeError('Usage: noctalia-travel-charge95 [--monitor]')
+        raise RuntimeError('Usage: noctalia-travel-charge95 [--monitor START STOP]')
 
 
 if __name__ == '__main__':

@@ -29,6 +29,7 @@ private:
   Label* m_startLabel = nullptr;
   Label* m_stopLabel = nullptr;
   Label* m_status = nullptr;
+  Label* m_feedback = nullptr;
   Slider* m_startSlider = nullptr;
   Slider* m_stopSlider = nullptr;
   Button* m_radio = nullptr;
@@ -37,6 +38,7 @@ private:
   bool m_active = false;
   bool m_syncing = false;
   bool m_radioActive = false;
+  bool m_charge95Active = false;
   int m_start = 55;
   int m_stop = 85;
   int m_realStart = 55;
